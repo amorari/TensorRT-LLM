@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
-import json
 import re
 import time
+import yaml
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Union
@@ -46,8 +46,9 @@ from nemo.collections.multimodal.speech_llm.modules.perception_modules import Au
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--log_level', type=str, default='warning')
-    parser.add_argument('--engine_dir', type=str, default='salm_engine')
-    parser.add_argument('--tokenizer_path', type=str, default='salm_engine')
+    parser.add_argument('--engine_dir', type=str, default='trt_engine')
+    parser.add_argument('--tokenizer_path', type=str, default=None)
+    parser.add_argument('--config_path', type=str, default=None)
     parser.add_argument('--results_dir', type=str, default='tmp')
     parser.add_argument('--assets_dir', type=str, default='./assets')
     parser.add_argument('--input_file', type=str, default=None)
@@ -106,12 +107,9 @@ def remove_tensor_padding(input_tensor, input_tensor_lengths=None, pad_value=0):
     return output_tensor
 
 
-def read_config(config_dir):
-    config_path = config_dir / 'config.json'
+def read_config(config_path):
     with open(config_path, 'r') as f:
-        config = json.load(f)
-    print(json.dumps(config, indent=4))
-    config = config['builder_config']
+        config = yaml.safe_load(f)
     return config
 
 def get_dtype_from_json_config(precision):
@@ -194,7 +192,7 @@ class SalmEncoding:
         self.encoder_input_length_dtype = ecnoder_input_length_dtype
 
     def get_session(self, engine_dir):
-        serialize_path = engine_dir / 'encoders_wrapper.trt'
+        serialize_path = engine_dir / 'encoder' / 'rank0.trt'
         with open(serialize_path, 'rb') as f:
            session = Session.from_serialized_engine(f.read())
         return session
@@ -349,16 +347,19 @@ class SalmTRTLLM(object):
         engine_dir = Path(engine_dir)
         dtype = get_dtype_from_json_config(config['precision'])
 
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)  
 
         self.encoder = SalmEncoding(engine_dir,
                                     config['perception']['encoder'],
                                     config['perception']['modality_adapter'])
 
+        '''
+        TODO: this is not ready
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)  
         self.decoder = SalmDecoding(engine_dir,
                                         tokenizer_path,
                                         runtime_mapping,
                                         debug_mode=False)
+        '''
 
     def process_batch(
             self,
@@ -372,6 +373,7 @@ class SalmTRTLLM(object):
         print(f"encoded_len: {encoded_len}")
 
         '''
+        TODO: to complete
         prompt_id = self.tokenizer.encode(
             text_prefix, allowed_special=self.tokenizer.special_tokens_set)
         prompt_id = torch.tensor(prompt_id)
@@ -408,10 +410,9 @@ def decode_wav_file(
     print(f"processed_signal shape: {processed_signal.shape}")
     print(f"total_duration: {processed_signal_lenght}")
     # repeat the processed_signal spectrogram to match the batch size
-    print(batch_size)
     processed_signal = processed_signal.repeat(batch_size, 1, 1)
-    print(f"processed_signal shape after repeat: {processed_signal.shape}")
     predictions = model.process_batch(processed_signal, processed_signal_lenght, text_prefix, num_beams)
+    print(predictions)
     prediction = predictions[0]
 
     prediction = re.sub(r'<\|.*?\|>', '', prediction)
@@ -485,18 +486,13 @@ def decode_dataset(
 if __name__ == '__main__':
     args = parse_arguments()
     tensorrt_llm.logger.set_level(args.log_level)
-    config = read_config(Path(args.engine_dir))
+    encoder_config = read_config(Path(args.config_path))
 
-    config_batch_size = config['global_batch_size']
-    if args.batch_size > config_batch_size:
-        batch_size = min(args.batch_size, config_batch_size);
-        print("batch size is larger than the model's global batch size, setting batch size to ", batch_size)
-    else:
-        batch_size = args.batch_size
+    batch_size = args.batch_size
 
-    model = SalmTRTLLM(args.engine_dir, args.tokenizer_path, config=config)
+    model = SalmTRTLLM(args.engine_dir, args.tokenizer_path, config=encoder_config)
 
-    preprocessor = SalmPreprocessor(config['perception']['preprocessor'], device='cuda')
+    preprocessor = SalmPreprocessor(encoder_config['perception']['preprocessor'], device='cuda')
 
     normalizer = EnglishTextNormalizer()
     if args.enable_warmup:
