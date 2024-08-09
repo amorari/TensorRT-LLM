@@ -19,10 +19,10 @@ wget --directory-prefix=assets https://raw.githubusercontent.com/yuekaizhang/Tri
 engines_dir=./trt_engines 
 
 # this is the global config_file (including all components)
-config_file=./config.yaml 
+config_file=./nemo_model/config.yaml 
 
 # tokenizer model file
-tokenizer_path=./XXXXXX_tokenizer.model 
+tokenizer_path=./nemo_model/XXXXXX_tokenizer.model 
 
 # wav file from assets
 wav_file=assets/1221-135766-0002.wav
