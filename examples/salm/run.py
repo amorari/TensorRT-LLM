@@ -486,13 +486,13 @@ def decode_dataset(
 if __name__ == '__main__':
     args = parse_arguments()
     tensorrt_llm.logger.set_level(args.log_level)
-    encoder_config = read_config(Path(args.config_path))
+    config = read_config(Path(args.config_path))
 
     batch_size = args.batch_size
 
-    model = SalmTRTLLM(args.engine_dir, args.tokenizer_path, config=encoder_config)
+    model = SalmTRTLLM(args.engine_dir, args.tokenizer_path, config=config)
 
-    preprocessor = SalmPreprocessor(encoder_config['perception']['preprocessor'], device='cuda')
+    preprocessor = SalmPreprocessor(config['perception']['preprocessor'], device='cuda')
 
     normalizer = EnglishTextNormalizer()
     if args.enable_warmup:
